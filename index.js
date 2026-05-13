@@ -202,11 +202,22 @@ async function run() {
       const filter = { email: user.email };
       const options = { upsert: true };
 
-      // Check if any admin already exists
-      const adminExists = await usersCollection.findOne({
-        role: "admin",
-      });
-      const initialRole = adminExists ? "user" : "admin";
+      // Protect the admin role: find if first admin exists AND check current user role
+      const adminExists = await usersCollection.findOne({ role: "admin" });
+      const existingUser = await usersCollection.findOne({ email: user.email });
+
+      // Determine the role to assign:
+      // 1. If no admin exists yet → make this user admin
+      // 2. If current user is already admin → keep them admin
+      // 3. Otherwise → use the role sent from the frontend (gardener/visitor)
+        let roleToAssign;
+        if (!adminExists) {
+          roleToAssign = "admin";
+        } else if (existingUser?.role === "admin") {
+          roleToAssign = "admin"; // never downgrade an admin
+        } else {
+        roleToAssign = user.role || "visitor";
+      }
 
       const updateDoc = {
         $set: {
@@ -216,9 +227,9 @@ async function run() {
           lastLogin: new Date(),
           specialty: user.specialty,
           bio: user.bio,
+          role: roleToAssign,
         },
         $setOnInsert: {
-          role: user.role || (initialRole === "admin" ? "admin" : "visitor"),
           status: "Active",
           createdAt: new Date(),
         },
@@ -329,7 +340,7 @@ async function run() {
 run().catch(console.dir);
 
 app.get("/", (req, res) => {
-  res.send("server is running");
+  res.send("gardenNest server is running...");
 });
 
 app.listen(port, () => {
